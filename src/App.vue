@@ -331,7 +331,6 @@ export default {
     },
 
     updateTicker(tickerName, price) {
-      console.log("tet");
       this.tickers
         .filter(t => t.name === tickerName)
         .forEach(t => {
@@ -352,24 +351,6 @@ export default {
       }
       return price > 1 ? price.toFixed(2) : price.toPrecision(2);
     },
-
-    // subscribeToUpdates(tickerName) {
-    //   setInterval(async () => {
-    //     const f = await fetch(
-    //       `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=ce3fd966e7a1d10d65f907b20bf000552158fd3ed1bd614110baa0ac6cb57a7e`
-    //     );
-    //     const data = await f.json();
-
-    //     this.tickers.find(t => t.name === tickerName).price =
-    //       data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-
-    //     if (this.selectedTicker?.name === tickerName) {
-    //       this.graph.push(data.USD);
-    //     }
-    //   }, 5000);
-    //   this.ticker = "";
-    //   this.hintsList = [];
-    // },
 
     addTicker() {
       const newTicker = {
