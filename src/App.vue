@@ -35,14 +35,14 @@
             >
             <div class="mt-1 relative rounded-md shadow-md">
               <input
+                @keypress.enter="addTicker"
+                @keyup="findTicker"
                 type="text"
                 name="wallet"
                 id="wallet"
                 class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
                 placeholder="Например DOGE"
                 v-model="ticker"
-                @keypress.enter="addTicker"
-                @keyup="findTicker"
               />
             </div>
             <div
@@ -64,9 +64,9 @@
           </div>
         </div>
         <button
+          @click="addTicker"
           type="button"
           class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-          @click="addTicker"
         >
           <!-- Heroicon name: solid/mail -->
           <svg
@@ -120,13 +120,13 @@
                 {{ item.name }} - USD
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ item.price }}
+                {{ formatPrice(item.price) }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
             <button
-              class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
               @click.stop="deleteTicket(key)"
+              class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
             >
               <svg
                 class="h-5 w-5"
@@ -151,17 +151,20 @@
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
           {{ selectedTicker.name }} - USD
         </h3>
-        <div class="flex items-end border-gray-600 border-b border-l h-64">
+        <div
+          ref="graph"
+          class="flex items-end border-gray-600 border-b border-l h-64"
+        >
           <div
-            v-for="(bar, idx) in normalizedGraph()"
+            v-for="(bar, idx) in normalizedGraph"
             :key="idx"
             :style="{ height: `${bar}%` }"
             class="bg-purple-800 border w-10"
           ></div>
         </div>
         <button
-          type="button"
           @click="selectedTicker = null"
+          type="button"
           class="absolute top-0 right-0"
         >
           <svg
@@ -192,22 +195,27 @@
 </template>
 
 <script>
+// H - Homework
 // [x] 6. Наличие в состоянии ЗАВИСИМЫХ ДАННЫХ | Критичность: 5+
-// [ ] 4. Запросы напрямую внутри компонента (???) | Критичность: 5
-// [ ] 2. При удалении остается подписка на загрузку тикера | Критичность: 5
-// [ ] 5. Обработка ошибок API | Критичность: 5
-// [ ] 3. Количество запросов | Критичность: 4
+// [x] 4. Запросы напрямую внутри компонента (???) | Критичность: 5
+// [x] 2. При удалении остается подписка на загрузку тикера | Критичность: 5
+// [H] 5. Обработка ошибок API | Критичность: 5
+// [x] 3. Количество запросов | Критичность: 4
 // [x] 8. При удалении тикера не изменяется localStorage | Критичность: 4
 // [x] 1. Одинаковый код в watch | Критичность: 3
 // [ ] 9. localStorage и анонимные вкладки | Критичность: 3
-// [ ] 7. График ужасно выглядит если будет много цен | Критичность: 2
+// [x] 7. График ужасно выглядит если будет много цен | Критичность: 2
 // [ ] 10. Магические строки и числа (URL, 5000 миллисекунд задержки, ключ локал стораджа, количество на странице) |  Критичность: 1
 
 // Параллельно
 // [x] График сломан если везде одинаковые значения
 // [x] При удалении тикера остается выбор
+
+import { subscribeToTicker, unsubscribeFromTicker } from "./api";
+
 export default {
   name: "App",
+
   data() {
     return {
       loader: true,
@@ -220,6 +228,8 @@ export default {
       selectedTicker: null,
 
       graph: [],
+      maxGraphElement: 1,
+
       hintsList: [],
       coinList: [],
       page: 1
@@ -232,7 +242,6 @@ export default {
       })
       .then(data => {
         this.coinList = Object.values(data.Data);
-        window.test = this.coinList;
         this.loader = false;
       });
 
@@ -240,23 +249,36 @@ export default {
       new URL(window.location).searchParams.entries()
     );
 
-    if (windowData.filter) {
-      this.filter = windowData.filter;
-    }
+    const VALID_KEYS = ["filter", "page"];
 
-    if (windowData.page) {
-      this.page = windowData.page;
-    }
+    VALID_KEYS.forEach(key => {
+      if (windowData[key]) {
+        this[key] = windowData[key];
+      }
+    });
 
     const tickersData = localStorage.getItem("cryptonomicon-list");
 
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
       this.tickers.forEach(ticker => {
-        this.subscribeToUpdates(ticker.name);
+        subscribeToTicker(ticker.name, newPrice =>
+          this.updateTicker(ticker.name, newPrice)
+        );
       });
     }
+
+    setInterval(this.updateTickers, 5000);
   },
+
+  mounted() {
+    window.addEventListener("resize", this.calculateMaxGraphElements);
+  },
+
+  beforeUnmount() {
+    window.removeEventListener("resize", this.calculateMaxGraphElements);
+  },
+
   computed: {
     startIndex() {
       return (this.page - 1) * 6;
@@ -298,24 +320,56 @@ export default {
       };
     }
   },
+
   methods: {
-    subscribeToUpdates(tickerName) {
-      setInterval(async () => {
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=ce3fd966e7a1d10d65f907b20bf000552158fd3ed1bd614110baa0ac6cb57a7e`
-        );
-        const data = await f.json();
+    calculateMaxGraphElements() {
+      if (!this.$refs.graph) {
+        return;
+      }
 
-        this.tickers.find(t => t.name === tickerName).price =
-          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-
-        if (this.selectedTicker?.name === tickerName) {
-          this.graph.push(data.USD);
-        }
-      }, 5000);
-      this.ticker = "";
-      this.hintsList = [];
+      this.maxGraphElements = this.$refs.graph.clientWidth / 38;
     },
+
+    updateTicker(tickerName, price) {
+      console.log("tet");
+      this.tickers
+        .filter(t => t.name === tickerName)
+        .forEach(t => {
+          if (t === this.selectedTicker) {
+            this.graph.push(price);
+            //TODO переписать на что-то получше
+            while (this.graph.length > this.maxGraphElements) {
+              this.graph.shift();
+            }
+          }
+          t.price = price;
+        });
+    },
+
+    formatPrice(price) {
+      if (price === "-") {
+        return price;
+      }
+      return price > 1 ? price.toFixed(2) : price.toPrecision(2);
+    },
+
+    // subscribeToUpdates(tickerName) {
+    //   setInterval(async () => {
+    //     const f = await fetch(
+    //       `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=ce3fd966e7a1d10d65f907b20bf000552158fd3ed1bd614110baa0ac6cb57a7e`
+    //     );
+    //     const data = await f.json();
+
+    //     this.tickers.find(t => t.name === tickerName).price =
+    //       data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+
+    //     if (this.selectedTicker?.name === tickerName) {
+    //       this.graph.push(data.USD);
+    //     }
+    //   }, 5000);
+    //   this.ticker = "";
+    //   this.hintsList = [];
+    // },
 
     addTicker() {
       const newTicker = {
@@ -325,9 +379,12 @@ export default {
 
       if (!this.errorMessage) {
         this.tickers = [...this.tickers, newTicker];
+        this.ticker = "";
         this.filter = "";
 
-        this.subscribeToUpdates(newTicker.name);
+        subscribeToTicker(newTicker.name, newPrice =>
+          this.updateTicker(newTicker.name, newPrice)
+        );
       }
     },
 
@@ -340,7 +397,9 @@ export default {
       if (this.selectedTicker === idx) {
         this.selectedTicker = null;
       }
+      unsubscribeFromTicker(idx.name);
     },
+
     findTicker() {
       let ticker = this.ticker.toUpperCase();
       if (!this.tickers.find(t => t.name === ticker)) {
@@ -358,6 +417,7 @@ export default {
         this.errorMessage = true;
       }
     },
+
     clickHint(hint) {
       this.ticker = hint;
       !this.tickers.find(t => t.name === this.ticker)
@@ -369,6 +429,8 @@ export default {
   watch: {
     selectedTicker() {
       this.graph = [];
+
+      this.$nextTick().then(this.calculateMaxGraphElements);
     },
 
     tickers(newValue, oldValue) {
